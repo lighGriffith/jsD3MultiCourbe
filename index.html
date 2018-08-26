@@ -378,8 +378,8 @@ var tracerCourbe=function(dataPcAdri,angle,hauteur){
         var dataAdri = [];
 	var localIndCourbe=indCourbe;
         var debut, pas, end;
-        var t = dataPcAdri.response;
-        t = t.split("    ");
+        var t = dataPcAdri.response.replace(/\s\s+/g, ' ');
+        t = t.split(" ");
         debut = parseFloat(t[0]);
         pas = parseFloat(t[1]);
         end = parseFloat(t[2].replace("\r\n", ""));
