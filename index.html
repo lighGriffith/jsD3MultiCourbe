@@ -1,0 +1,500 @@
+
+
+<!DOCTYPE html>
+<meta charset="utf-8">
+<style>
+   .axis path,
+   .axis line {
+   fill: none;
+   stroke: #000;
+   shape-rendering: crispEdges;
+   }
+   path.line {
+   fill: none;
+   stroke-largeur: 1px;
+   pointer-events: none;
+   }
+path.lineAdri {
+   fill: none;
+   stroke-largeur: 1px;
+   pointer-events: none;
+   }
+path.lineSommeTotale {
+   fill: none;
+   stroke-largeur: 1px;
+   pointer-events: none;
+   }
+   .zoomOut {
+   fill: #66a;
+   cursor: pointer;
+   }
+   .zoomOutText {
+   pointer-events: none;
+   fill: #ccc;
+   }
+   .zoomOverlay {
+   pointer-events: all;
+   fill: none;
+   }
+   .band {
+   fill: none;
+   stroke-largeur: 2px;
+   stroke: black;
+   }
+</style>
+<body>
+   <button onClick="zoomOut()"> Zoom Out </button>
+   <input id="angleText" type="text"></input>
+   <button onClick="decalerAngle()"> decaler angle </button>
+   <input id="hauteurText" type="text"></input>
+   <button onClick="decalerHauteur()"> decaler hauteur </button>
+   <div id="graph"></div>
+   </button>
+   <script src="https://d3js.org/d3.v4.min.js"></script>
+   <script>
+
+var dataTheoriqueNom = [];
+var dataTheoriqueVisible=[];
+var dataTheoriques = [];
+var x, y, xDomain, yDomain, xDomainMin, yDomainMin, xAxis, yAxis, zoomArea, line;
+var svg;
+var margin = {
+    top: 40,
+    right: 40,
+    bottom: 50,
+    left: 60
+}
+var largeur = 1280 - margin.left - margin.right;
+var hauteur = 600 - margin.top - margin.bottom;
+var files;
+var colors = d3.scaleOrdinal(d3.schemeCategory10);
+
+d3.csv("http://localhost:8000/comparaisonGenerale.csv", function(data) {
+    //Préparation des données
+    dataTheoriqueNom = Object.keys(data[0]);
+    dataTheoriqueNom.shift();
+    for (var indName in dataTheoriqueNom) {
+        var dt = [];
+	dataTheoriqueVisible.push(false);
+        data.forEach(function(element) {
+            dt.push({
+                "x": parseFloat(element["angle"]),
+                "y": parseFloat(element[dataTheoriqueNom[indName]])
+            });
+        });
+        dataTheoriques.push(dt);
+    }
+    data = dataTheoriques;
+
+    var bandPos = [-1, -1];
+    var pos;
+    xDomain = 0;
+    yDomain = 0;
+    xDomainMin = 0;
+    yDomainMin = 0;
+
+    var drag = d3.drag();
+
+    svg = d3.select("body").append("svg")
+        .attr("width", largeur + margin.left + margin.right)
+        .attr("height", hauteur + margin.top + margin.bottom)
+        .append("g")
+        .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
+
+    //zoom graphe
+    svg.append("clipPath")
+        .attr("id", "clip")
+        .append("rect")
+        .attr("width", largeur)
+        .attr("height", hauteur);
+
+    var zoomOverlay = svg.append("rect")
+        .attr("width", largeur - 10)
+        .attr("height", hauteur)
+        .attr("class", "zoomOverlay")
+        .call(drag);
+
+
+    var band = svg.append("rect")
+        .attr("width", 0)
+        .attr("height", 0)
+        .attr("x", 0)
+        .attr("y", 0)
+        .attr("class", "band");
+
+    var zoomout = svg.append("g");
+
+    drag.on("end", function() {
+        var pos = d3.mouse(this);
+        var x1 = x.invert(bandPos[0]);
+        var x2 = x.invert(pos[0]);
+
+        if (x1 < x2) {
+            zoomArea.x1 = x1;
+            zoomArea.x2 = x2;
+        } else {
+            zoomArea.x1 = x2;
+            zoomArea.x2 = x1;
+        }
+
+        var y1 = y.invert(pos[1]);
+        var y2 = y.invert(bandPos[1]);
+
+        if (x1 < x2) {
+            zoomArea.y1 = y1;
+            zoomArea.y2 = y2;
+        } else {
+            zoomArea.y1 = y2;
+            zoomArea.y2 = y1;
+        }
+
+        bandPos = [-1, -1];
+
+        d3.select(".band").transition()
+            .attr("width", 0)
+            .attr("height", 0)
+            .attr("x", bandPos[0])
+            .attr("y", bandPos[1]);
+
+        zoom();
+
+    });
+
+    drag.on("drag", function() {
+
+        var pos = d3.mouse(this);
+
+        if (pos[0] < bandPos[0]) {
+            d3.select(".band").
+            attr("transform", "translate(" + (pos[0]) + "," + bandPos[1] + ")");
+        }
+        if (pos[1] < bandPos[1]) {
+            d3.select(".band").
+            attr("transform", "translate(" + (pos[0]) + "," + pos[1] + ")");
+        }
+        if (pos[1] < bandPos[1] && pos[0] > bandPos[0]) {
+            d3.select(".band").
+            attr("transform", "translate(" + (bandPos[0]) + "," + pos[1] + ")");
+        }
+
+        //set new position of band when user initializes drag
+        if (bandPos[0] == -1) {
+            bandPos = pos;
+            d3.select(".band").attr("transform", "translate(" + bandPos[0] + "," + bandPos[1] + ")");
+        }
+
+        d3.select(".band").transition().duration(1)
+            .attr("width", Math.abs(bandPos[0] - pos[0]))
+            .attr("height", Math.abs(bandPos[1] - pos[1]));
+    });
+
+    function zoom() {
+        //recalculate domains
+        if (zoomArea.x1 > zoomArea.x2) {
+            x.domain([zoomArea.x2, zoomArea.x1]);
+        } else {
+            x.domain([zoomArea.x1, zoomArea.x2]);
+        }
+
+        if (zoomArea.y1 > zoomArea.y2) {
+            y.domain([zoomArea.y2, zoomArea.y1]);
+        } else {
+            y.domain([zoomArea.y1, zoomArea.y2]);
+        }
+
+        //update axis and redraw lines
+        var t = svg.transition().duration(750);
+        t.select(".x.axis").call(xAxis);
+        t.select(".y.axis").call(yAxis);
+        t.selectAll(".line").attr("d", line);
+
+    }
+
+
+    // Dessiner le graphe
+    function updateChart(data) {
+        var xmax, ymax, xmin, ymin;
+
+        d3.selectAll('.line').remove();
+        d3.selectAll(".axis").remove();
+
+        data.forEach((da, idx) => {
+            xmax = da.map(d => d.x).reduce((a, c) => Math.max(a, c))
+            ymax = da.map(d => d.y).reduce((a, c) => Math.max(a, c))
+
+            xmin = da.map(d => d.x).reduce((a, c) => Math.min(a, c))
+            ymin = da.map(d => d.y).reduce((a, c) => Math.min(a, c))
+
+            xDomain = Math.max(xDomain, xmax);
+            yDomain = Math.max(yDomain, ymax);
+            xDomainMin = Math.min(xDomainMin, xmin);
+            yDomainMin = Math.min(yDomainMin, ymin);
+        })
+        xDomain += xDomain * .10;
+        yDomain += yDomain * .10;
+        xDomainMin += xDomainMin * .10;
+        yDomainMin += yDomainMin * .10;
+
+
+        line = d3.line()
+            .x(function(d) {
+                return x(d.x);
+            })
+            .y(function(d) {
+                return y(d.y);
+            });
+
+        zoomArea = {
+            x1: xDomainMin,
+            y1: yDomainMin,
+            x2: xDomain,
+            y2: yDomain
+        };
+
+        x = d3.scaleLinear().range([0, largeur]).domain([xDomainMin, xDomain]);
+        y = d3.scaleLinear().range([hauteur, 0]).domain([yDomainMin, yDomain]);
+
+        xAxis = d3.axisBottom(x)
+        yAxis = d3.axisLeft(y)
+
+        //Creation des axes.
+        svg.append("g")
+            .attr("class", "x axis")
+            .call(xAxis)
+            .attr("transform", "translate(0," + hauteur + ")");
+
+        svg.append("g")
+            .attr("class", "y axis")
+            .call(yAxis)
+
+        //Tracer les courbes theoriques.
+        data.forEach(function(da, idx) {
+            svg.append("path")
+                .datum(da)
+                .attr("class", "line line" + idx)
+                .attr("clip-path", "url(#clip)")
+                .style("stroke", colors(idx))
+                .attr("d", line);
+
+
+            svg.append("text")
+                .attr("x", largeur - 200)
+                .attr("y", 0 + idx * 30)
+                .attr("width", 200)
+                .style("stroke", colors(idx))
+                .attr("height", 20)
+                .attr("dy", ".35em")
+                .text(dataTheoriqueNom[idx])
+                .on("click", function() {
+                    var myClass = ".line" + idx;
+		    dataTheoriqueVisible[idx]=true;
+                    var styleDisplay = d3.select(myClass)._groups[0][0].style.display;
+                    if (!styleDisplay) {
+                        d3.select(myClass)._groups[0][0].style.display = "none";
+			dataTheoriqueVisible[idx]=false;
+                    } else {
+                        d3.select(myClass)._groups[0][0].style.display = "";
+			dataTheoriqueVisible[idx]=true;
+                    }
+                });
+        });
+
+
+
+        d3.select(".band").raise();
+
+        zoom();
+        for (var ind in d3.selectAll(".line")._groups[0]) {
+            var node = d3.selectAll(".line")._groups[0][ind];
+            if (node && node.style) {
+                node.style.display = "none";
+            }
+        }
+
+	svg.append("text")
+            .attr("x", largeur - 800)
+            .attr("y", 0)
+            .attr("width", 200)
+            .style("stroke", colors(80))
+            .attr("height", 20)
+            .attr("dy", ".55em")
+            .text("sommeTotale")
+            .on("click", function() {
+		    var myClass = ".lineSommeTotale";
+		    var styleDisplay = d3.select(myClass)._groups[0][0].style.display;
+		    if (!styleDisplay) {
+			d3.select(myClass)._groups[0][0].style.display = "none";
+			toogleTotaleAllOther(false);
+		    } else {
+			d3.select(myClass)._groups[0][0].style.display = "";
+			toogleTotaleAllOther(true);
+		    }
+	});
+
+	svg.append("text")
+            .attr("x", largeur - 1000)
+            .attr("y", 0)
+            .attr("width", 200)
+            .style("stroke", colors(80))
+            .attr("height", 20)
+            .attr("dy", ".55em")
+            .text("Recalculer somme")
+            .on("click", function() {
+		    tracerSommeTotale();
+		   
+	});
+
+
+    }
+    updateChart(dataTheoriques);
+    //Chargement de l'ensemble des fichiers .dat
+    d3.request("http://localhost:8000", function(allFile) {
+        files = allFile;
+        var myString = files.response;
+        var myRegexp = new RegExp("<li><a href=\\\"(.*).dat\\\"", 'gm');
+        var match = myRegexp.exec(myString);
+        var callAlreadyDone = [];
+        while (match != null) {
+            if (callAlreadyDone.indexOf(match[1]) == -1) {
+                tracerCourbeWithRequest("http://localhost:8000/" + match[1] + ".dat");
+                callAlreadyDone.push(match[1]);
+            }
+
+            match = myRegexp.exec(myString);
+        }
+    })
+});
+var indCourbe = 0;
+var dataAdriToRedraw=[];
+// Tracer une courbe pratique.
+var tracerCourbeWithRequest = function(path) {
+    d3.request(path, function(dataPcAdri) {
+	tracerCourbe(dataPcAdri);
+    });
+}
+
+var tracerCourbe=function(dataPcAdri,angle,hauteur){
+	console.log("tracerCourbe");
+        var dataAdri = [];
+	var localIndCourbe=indCourbe;
+        var debut, pas, end;
+        var t = dataPcAdri.response;
+        t = t.split("    ");
+        debut = parseFloat(t[0]);
+        pas = parseFloat(t[1]);
+        end = parseFloat(t[2].replace("\r\n", ""));
+        for (var ind = 3; ind < t.length; ind++) {
+            dataAdri.push({
+                "x": parseFloat((angle?angle:0)+debut + (ind - 2) * pas),
+                "y": parseFloat(parseFloat(t[ind])+(hauteur?hauteur:0))
+            });
+        }
+	dataAdriToRedraw[localIndCourbe]=dataPcAdri;
+        svg.append("path")
+            .datum(dataAdri)
+            .attr("class", "lineAdri lineAdri"+indCourbe)
+            .attr("clip-path", "url(#clip)")
+            .style("stroke", colors((indCourbe+1)*100))
+            .attr("d", line);
+
+        var titreAdri = dataPcAdri.responseURL.split("/")[3];
+	
+        svg.append("text")
+            .attr("x", largeur - 500)
+            .attr("y", indCourbe * 20)
+	    .attr("class", "lineAdriText")
+            .attr("width", 200)
+            .style("stroke", colors((indCourbe+1)*100))
+            .attr("height", 20)
+            .attr("dy", ".55em")
+            .text(titreAdri ? titreAdri : "data Adri")
+            .on("click", function() {
+		    var myClass = ".lineAdri" + localIndCourbe;
+		    var styleDisplay = d3.select(myClass)._groups[0][0].style.display;
+		    if (!styleDisplay) {
+			d3.select(myClass)._groups[0][0].style.display = "none";
+		    } else {
+			d3.select(myClass)._groups[0][0].style.display = "";
+		    }
+	});
+        d3.select(".lineAdri"+indCourbe)._groups[0][0].style.display = "";
+	indCourbe++;
+}
+
+var tracerSommeTotale = function() {
+	console.log("tracerSommeTotale");
+	var dataSommeTotale=[];
+	for(var ind=0;ind<dataTheoriques[0].length;ind++){
+		var valeur=0;
+		for (var indVisible = 0; indVisible < dataTheoriqueVisible.length; indVisible++) {
+			if(dataTheoriqueVisible[indVisible]==true){
+				valeur=valeur+dataTheoriques[indVisible][ind].y;
+			}
+		}
+		dataSommeTotale.push({
+			"x": dataTheoriques[0][ind].x,
+			"y": valeur
+		    });
+	}
+	d3.select(".lineSommeTotale").remove();
+	console.log("somme totale dessin");
+	svg.append("path")
+	    .datum(dataSommeTotale)
+	    .attr("class", "lineSommeTotale")
+	    .attr("clip-path", "url(#clip)")
+	    .style("stroke", colors(80))
+	    .attr("d", line);
+}
+
+var toogleTotaleAllOther=function(isSommeTotaleMode){
+	if(isSommeTotaleMode){
+		for (var ind in d3.selectAll(".line")._groups[0]) {
+		    var node = d3.selectAll(".line")._groups[0][ind];
+		    if (node && node.style) {
+		        node.style.display = "none";
+		    }
+		}
+	}else{
+		for (var indVisible = 0; indVisible < dataTheoriqueVisible.length; indVisible++) {
+			if(dataTheoriqueVisible[indVisible]==true){
+				d3.selectAll(".line")._groups[0][indVisible].style.display="";
+			}
+		}
+	}
+	
+}
+var angleUpdate=0;
+var hauteurUpdate=0;
+var decalerAngle=function(){
+	indCourbe = 0;
+	angleUpdate=parseFloat(d3.select("#angleText")._groups[0][0].value);
+	d3.selectAll(".lineAdri").remove();
+	d3.selectAll(".lineAdriText").remove();
+	for(var ind in dataAdriToRedraw){
+		tracerCourbe(dataAdriToRedraw[ind],angleUpdate,hauteurUpdate);
+	}
+}
+var decalerHauteur=function(){
+	indCourbe = 0;
+	hauteurUpdate=parseFloat(d3.select("#hauteurText")._groups[0][0].value);
+	d3.selectAll(".lineAdri").remove();
+	d3.selectAll(".lineAdriText").remove();
+	for(var ind in dataAdriToRedraw){
+		tracerCourbe(dataAdriToRedraw[ind],angleUpdate,hauteurUpdate);
+	}
+}
+//Réinitialiser le zoom
+var zoomOut = function() {
+    x.domain([xDomainMin, xDomain]);
+    y.domain([yDomainMin, yDomain]);
+    var t = svg.transition().duration(750);
+    t.select(".x.axis").call(xAxis);
+    t.select(".y.axis").call(yAxis);
+    t.selectAll(".line").attr("d", line);
+}
+        
+   </script>
+</body>
+</html>
+
+
